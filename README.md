@@ -191,6 +191,19 @@ To solve this, an additional GitHub action on_push trigger has been added to eac
 - Have you run your commit with the `--no-verify` argument? If so this will skip the security scans and the validation hooks needed to pass the github action
 - Have you installed the pre-commit commit-msg hook? To check this, open your repository and check the ./hooks folder. There should be an executable file named `commit-msg` that is ran by the pre-commit framework
 
+The `pre-commit-check` job in `org.common-ci.yml` walks the PR's commits (following first-parent only) to find the most recent commit that isn't an allowed GitHub web UI action, then checks whether it needs the `Signed-off-by: DBT pre-commit check` trailer. The table below covers every outcome:
+
+| Scenario | Condition | Outcome | Why |
+|---|---|---|---|
+| Every commit in the PR is an allowed web UI commit | All commits have committer email `noreply@github.com` **and** a message matching an allowed prefix (`Apply suggestion from`, `Apply suggestions from`, `Merge branch '$BASE_REF' into`) | ✅ Pass | Nothing to check, the job exits early |
+| Latest non-web-UI commit came from an already-merged PR | `gh pr list --search "$sha" --state merged` returns a non-empty result | ✅ Pass | The commit predates/bypassed the trailer check via a merge, so it's exempted |
+| Latest non-web-UI commit has the trailer | Commit message contains `Signed-off-by: DBT pre-commit check` | ✅ Pass | The pre-commit hook was installed and ran correctly |
+| Latest non-web-UI commit is missing the trailer | Pre-commit hook wasn't installed/run, no trailer in message | ❌ Fail | This is the case the FAQ bullets above address |
+| Web UI commit from `noreply@github.com` with a message that doesn't match any allowed prefix (e.g. a manual file edit made in the browser) | Email matches, but message text doesn't start with an allowed prefix | ❌ Fail (usually) | Not treated as an allowed web UI commit, so it's the commit that gets checked - browser edits don't carry the trailer |
+| Non-web-UI committer email, any message | Committer email isn't `noreply@github.com` | Depends on trailer | This is always the commit that gets checked, since it can never match the allow-list |
+| Merge commit pulled in via a non-first-parent branch | Commit reachable only through the second parent of a merge | *(ignored)* | `--first-parent` means these commits are never examined |
+| PR opened by `dependabot[bot]` | `github.actor == 'dependabot[bot]'` | Skipped entirely | The job doesn't run at all for dependabot PRs |
+
 ## I'm receiving errors updating the rev version
 
 - Try running `pre-commit gc` and `pre-commit clean` to remove any previous cached versions pre-commit has locally
